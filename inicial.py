@@ -16,8 +16,9 @@ pyboy.set_emulation_speed(velocidad_emulacion)
 
 # Variable de control para asegurar que ciertas acciones sólo se realicen una vez
 acciones_realizadas = False
-
-
+#Contador de frames para capturas
+frame_counter = 0 
+frame_counter_max = 60*0.5*velocidad_emulacion # cada 0.5 "segundos"
 
 
 
@@ -28,11 +29,16 @@ while not pyboy.tick():
         navegar_menu(velocidad_emulacion,pyboy)
         acciones_realizadas = True
 
-    # Obtén una captura de pantalla del juego
-    screen = bot_m.screen()
-    screenshot = screen.screen_image()
-    # Mostrar la captura de pantalla
-    screenshot.show()
+    frame_counter +=1
+
+    if frame_counter >= frame_counter_max:
+        #Reseteamos contador
+        frame_counter = 0
+        # Obtén una captura de pantalla del juego
+        screen = bot_m.screen()
+        screenshot = screen.screen_image()
+        # Mostrar la captura de pantalla
+        screenshot.show()
 
 
     pass
