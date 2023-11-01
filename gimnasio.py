@@ -15,6 +15,12 @@ class TetrisEnv(gymnasium.Env):
         self.action_space = gymnasium.spaces.Discrete(4)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
         self.observation_space = gymnasium.spaces.Box(low=0, high=1.0, shape=(84, 84), dtype=np.float32)
 
+
+        # #Si no aumenta el juego en x frames empezamos ciclo.
+        # self.prev_score = 0  # Puntuación en el último tick
+        # self.ticks_since_last_score_increase = 0  # Ticks desde la última vez que la puntuación aumentó
+
+
     def step(self, action):
         # Mapeo de acciones:
         # 0 -> mover izquierda
@@ -42,15 +48,28 @@ class TetrisEnv(gymnasium.Env):
         reward = self._get_reward()  # Crear un método con la recompensa
         done = self._is_done()  # Hace falta crear un método para ver si el episodio ha terminado
         info = {}  # Información adicional
-        return observation, reward, done, info
+
+
+        # #Comprueba si la puntuación ha aumentado
+        # if reward > self.prev_score:
+        #  self.ticks_since_last_score_increase = 0  # Reinicia el contador de ticks
+        #  self.prev_score = reward  # Actualiza la puntuación anterior
+        # else:
+        #  self.ticks_since_last_score_increase += 1  # Incrementa el contador de ticks
+
+        # # Comprueba la condición de truncamiento
+        # truncated = self.ticks_since_last_score_increase >= 1800 #Elegimos 1800 x 15 fps x 120 segundos
+        truncated= False
+
+        return observation, reward, done, truncated ,info 
     
     def _get_observation(self):
         screen = self.pyboy.botsupport_manager().screen()
         screenshot = screen.screen_image()
         observaction = np.array(screenshot)
         # Convierte la imagen a escala de grises
-        resized_image = transform.resize(observaction, (84, 84), anti_aliasing=True) #Devuelve imagenes de 0 a 1.
-        gray_image = color.rgb2gray(resized_image)
+        resized_image = transform.resize(observaction, (84, 84), anti_aliasing=True, preserve_range=False) #Devuelve imagenes de 0 a 1.
+        gray_image = color.rgb2gray(resized_image).astype(np.float32) 
         return gray_image
 
     def _get_reward(self):
@@ -63,13 +82,17 @@ class TetrisEnv(gymnasium.Env):
 
     def _is_done(self):
         # Implementar la lógica para ver si el episodio ha terminado
-        return self.game_wrapper.game_over
+        return bool(self.game_wrapper.game_over)
+    
 
 
-
-    def reset(self):
-        self.game_wrapper.reset_game(timer_div=0x00)
-        return self._get_observation()
+    def reset(self,seed=None):
+        if seed is None:
+            seed = 0x00
+        self.game_wrapper.reset_game(timer_div=seed)
+        observation = self._get_observation()
+        info = {} # Información adicional (en este caso, un diccionario vacío)
+        return observation, info
     
 
     def render(self):

@@ -13,7 +13,7 @@ env = TetrisEnv('Tetris.gb')
 vec_env = DummyVecEnv([lambda: env])
 
 # Crear el modelo
-model = DQN("CnnPolicy", vec_env, verbose=1)
+model = DQN("MlpPolicy", vec_env, verbose=1)
 
 # Entrenar el modelo
 model.learn(total_timesteps=100000)
