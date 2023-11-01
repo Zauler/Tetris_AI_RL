@@ -9,10 +9,9 @@ from skimage import transform, color
 class TetrisEnv(gymnasium.Env):
     def __init__(self, game_file_path):
         super().__init__()
-        self.pyboy = PyBoy(game_file_path)
-        title = self.pyboy.cartridge_title()
-        self.game_wrapper = GameWrapperTetris(self.pyboy,title)
-        self.game_wrapper.start_game() #inciamos el juego.
+        self.pyboy = PyBoy(game_file_path,window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
+        self.game_wrapper = self.pyboy.game_wrapper()
+        self.game_wrapper.start_game(timer_div=0x00) #inciamos el juego.
         self.action_space = gymnasium.spaces.Discrete(4)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
         self.observation_space = gymnasium.spaces.Box(low=0, high=1.0, shape=(84, 84), dtype=np.float32)
 
@@ -56,20 +55,20 @@ class TetrisEnv(gymnasium.Env):
 
     def _get_reward(self):
         # Implementar la lógica para calcular la recompensa
-        score = self.game_wrapper.score() * 5
-        level = self.game_wrapper.level() * 100
-        lines = self.game_wrapper.lines() * 5
+        score = self.game_wrapper.score * 5
+        level = self.game_wrapper.level * 100
+        lines = self.game_wrapper.lines * 5
 
         return score + level + lines
 
     def _is_done(self):
         # Implementar la lógica para ver si el episodio ha terminado
-        return self.game_wrapper.game_has_started() and self.game_wrapper.game_over()
+        return self.game_wrapper.game_over
 
 
 
     def reset(self):
-        self.game_wrapper.reset_game()
+        self.game_wrapper.reset_game(timer_div=0x00)
         return self._get_observation()
     
 

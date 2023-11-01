@@ -1,4 +1,3 @@
-import time
 from pyboy import PyBoy, WindowEvent
 from F_aux import *
 
@@ -28,6 +27,9 @@ while not pyboy.tick():
     if not acciones_realizadas:
         navegar_menu(velocidad_emulacion,pyboy)
         acciones_realizadas = True
+        if acciones_realizadas == True:
+            memoria =pyboy.get_memory_value("$C0A0")
+            print(memoria)
 
     frame_counter +=1
 
@@ -39,6 +41,8 @@ while not pyboy.tick():
         screenshot = screen.screen_image()
         # Mostrar la captura de pantalla
         screenshot.show()
+
+    
 
 
     pass

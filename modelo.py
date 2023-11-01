@@ -1,9 +1,10 @@
 # Suponiendo que estás usando Stable Baselines
 from stable_baselines3 import DQN
-from stable_baselines3.common.envs import DummyVecEnv
-
+from stable_baselines3.common.vec_env import DummyVecEnv
 # Importar tu entorno
 from gimnasio import TetrisEnv
+
+
 
 # Crear el entorno
 env = TetrisEnv('Tetris.gb')
