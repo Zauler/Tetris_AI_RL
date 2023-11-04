@@ -1,6 +1,8 @@
 # Suponiendo que estás usando Stable Baselines
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv
+
+
 # Importar tu entorno
 from gimnasio import TetrisEnv
 
@@ -12,8 +14,9 @@ env = TetrisEnv('Tetris.gb')
 # Vectorizar el entorno (requerido por Stable Baselines)
 vec_env = DummyVecEnv([lambda: env])
 
+
 # Crear el modelo
-model = DQN("MlpPolicy", vec_env, verbose=1)
+model = DQN("MlpPolicy", vec_env, verbose=1, tensorboard_log="./a2c_cartpole_tensorboard/")
 
 # Entrenar el modelo
 model.learn(total_timesteps=100000)

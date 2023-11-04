@@ -1,24 +1,34 @@
 import gymnasium
-import numpy as np  # Importar numpy para utilizar np.float32
-import matplotlib.pyplot as plt
+import numpy as np
+from skimage.transform import resize
 from pyboy import PyBoy, WindowEvent
-from pyboy.plugins.game_wrapper_tetris import GameWrapperTetris
-from skimage import transform, color
+from einops import rearrange  # Asegúrate de tener instalada la librería einops
+
 
 
 class TetrisEnv(gymnasium.Env):
+        
+    metadata = {
+        "render.modes": ["human", "rgb_array"],
+        "video.frames_per_second": 15
+    }
+        
     def __init__(self, game_file_path):
         super().__init__()
         self.pyboy = PyBoy(game_file_path,window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
         self.game_wrapper = self.pyboy.game_wrapper()
         self.game_wrapper.start_game(timer_div=0x00) #inciamos el juego.
         self.action_space = gymnasium.spaces.Discrete(4)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
-        self.observation_space = gymnasium.spaces.Box(low=0, high=1.0, shape=(84, 84), dtype=np.float32)
 
+         # Define el output_shape, asumiendo que deseas una resolución baja como 84x84 y color RGB.
+        self.output_shape = (84, 84, 3)  # Ajusta según sea necesario
+        
+        # Actualizar el observation_space para que coincida con output_shape
+        self.observation_space = gymnasium.spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
 
-        # #Si no aumenta el juego en x frames empezamos ciclo.
-        # self.prev_score = 0  # Puntuación en el último tick
-        # self.ticks_since_last_score_increase = 0  # Ticks desde la última vez que la puntuación aumentó
+        #Si no aumenta el juego en x frames empezamos ciclo.
+        self.prev_score = 0  # Puntuación en el último tick
+        self.ticks_since_last_score_increase = 0  # Ticks desde la última vez que la puntuación aumentó
 
 
     def step(self, action):
@@ -50,39 +60,41 @@ class TetrisEnv(gymnasium.Env):
         info = {}  # Información adicional
 
 
-        # #Comprueba si la puntuación ha aumentado
-        # if reward > self.prev_score:
-        #  self.ticks_since_last_score_increase = 0  # Reinicia el contador de ticks
-        #  self.prev_score = reward  # Actualiza la puntuación anterior
-        # else:
-        #  self.ticks_since_last_score_increase += 1  # Incrementa el contador de ticks
+        #Comprueba si la puntuación ha aumentado
+        if reward > self.prev_score:
+         self.ticks_since_last_score_increase = 0  # Reinicia el contador de ticks
+         self.prev_score = reward  # Actualiza la puntuación anterior
+        else:
+         self.ticks_since_last_score_increase += 1  # Incrementa el contador de ticks
 
-        # # Comprueba la condición de truncamiento
-        # truncated = self.ticks_since_last_score_increase >= 1800 #Elegimos 1800 x 15 fps x 120 segundos
+        # Comprueba la condición de truncamiento
+        truncated = self.ticks_since_last_score_increase >= 1800 #Elegimos 1800 x 15 fps x 120 segundos
         truncated= False
 
         return observation, reward, done, truncated ,info 
     
     def _get_observation(self):
-        screen = self.pyboy.botsupport_manager().screen()
-        screenshot = screen.screen_image()
-        observaction = np.array(screenshot)
-        # Convierte la imagen a escala de grises
-        resized_image = transform.resize(observaction, (84, 84), anti_aliasing=True, preserve_range=False) #Devuelve imagenes de 0 a 1.
-        gray_image = color.rgb2gray(resized_image).astype(np.float32) 
-        return gray_image
-
+        # Obtener la matriz de píxeles RGB del juego
+        game_pixels = self.pyboy.botsupport_manager().screen().screen_ndarray()
+        
+        # Reducir la resolución de la imagen, si es necesario
+        reduced_res_pixels = (255 * resize(game_pixels, self.output_shape)).astype(np.uint8)
+        
+        return reduced_res_pixels
+    
     def _get_reward(self):
         # Implementar la lógica para calcular la recompensa
         score = self.game_wrapper.score * 5
-        level = self.game_wrapper.level * 100
         lines = self.game_wrapper.lines * 5
+        penalization = self.ticks_since_last_score_increase*0.01
 
-        return score + level + lines
+        return score + lines - penalization
 
     def _is_done(self):
         # Implementar la lógica para ver si el episodio ha terminado
-        return bool(self.game_wrapper.game_over)
+        # done = bool(self.game_wrapper.game_over())
+        done = False
+        return done
     
 
 
@@ -95,21 +107,29 @@ class TetrisEnv(gymnasium.Env):
         return observation, info
     
 
-    def render(self):
-        screen = self.pyboy.botsupport_manager().screen()
-        screenshot = screen.screen_image()
-        observation = np.array(screenshot)
+    def render(self, reduce_res=True, add_memory=True, update_mem=True):
 
-        if hasattr(self, 'rendering_window') and self.rendering_window is not None:
-            # Si ya hay una ventana de renderización, solo actualiza la imagen
-            self.rendering_window.set_data(observation)
-            plt.draw()
-            plt.pause(0.001)  # pequeña pausa para actualizar la ventana
-        else:
-            # Si no hay una ventana de renderización, crea una nueva
-            plt.ion()  # modo interactivo ON para que no bloquee la ejecución
-            self.rendering_window = plt.imshow(observation)
-            plt.show()
+        game_pixels_render = self.pyboy.botsupport_manager().screen().screen_ndarray()  # (144, 160, 3)
+        if reduce_res:
+            # Reducir la resolución de la imagen del juego
+            game_pixels_render = (255 * resize(game_pixels_render, self.output_shape)).astype(np.uint8)
+            if update_mem:
+                # Actualizar el array de fotogramas recientes
+                self.recent_frames[0] = game_pixels_render
+            if add_memory:
+                # Crear una imagen compuesta con memoria de exploración y memoria reciente
+                pad = np.zeros(shape=(self.mem_padding, self.output_shape[1], 3), dtype=np.uint8)
+                game_pixels_render = np.concatenate(
+                    (
+                        self.create_exploration_memory(),
+                        pad,
+                        self.create_recent_memory(),
+                        pad,
+                        rearrange(self.recent_frames, 'f h w c -> (f h) w c')
+                    ),
+                    axis=0
+                )
+        return game_pixels_render
 
     def close(self):
         self.pyboy.stop()
