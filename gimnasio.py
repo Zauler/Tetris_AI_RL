@@ -13,9 +13,11 @@ class TetrisEnv(gymnasium.Env):
         "video.frames_per_second": 15
     }
         
-    def __init__(self, game_file_path):
+    def __init__(self, game_file_path,vel=1):
         super().__init__()
         self.pyboy = PyBoy(game_file_path,window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
+
+        self.pyboy.set_emulation_speed(vel)
         self.game_wrapper = self.pyboy.game_wrapper()
         self.game_wrapper.start_game(timer_div=0x00) #inciamos el juego.
         self.action_space = gymnasium.spaces.Discrete(4)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
@@ -29,6 +31,7 @@ class TetrisEnv(gymnasium.Env):
         #Si no aumenta el juego en x frames empezamos ciclo.
         self.prev_score = 0  # Puntuación en el último tick
         self.ticks_since_last_score_increase = 0  # Ticks desde la última vez que la puntuación aumentó
+
 
 
     def step(self, action):
@@ -85,7 +88,7 @@ class TetrisEnv(gymnasium.Env):
     def _get_reward(self):
         # Implementar la lógica para calcular la recompensa
         score = self.game_wrapper.score * 5
-        lines = self.game_wrapper.lines * 5
+        lines = self.game_wrapper.lines * 500
         penalization = self.ticks_since_last_score_increase*0.01
 
         return score + lines - penalization
@@ -107,7 +110,7 @@ class TetrisEnv(gymnasium.Env):
         return observation, info
     
 
-    def render(self, reduce_res=True, add_memory=True, update_mem=True):
+    def render(self, reduce_res=True, add_memory=True, update_mem=False):
 
         game_pixels_render = self.pyboy.botsupport_manager().screen().screen_ndarray()  # (144, 160, 3)
         if reduce_res:

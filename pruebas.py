@@ -13,6 +13,7 @@ for _ in range(10000):  # Ejecutar 100 pasos, por ejemplo.
     observation, reward, done, truncated  ,info = tetris_env.step(action)
     print("DONEEEEEEEEEEEEEEEEEEE: ", done)
     print("TRUNCATEEEEEEEEEE: ", truncated)
+    print(tetris_env.gameoverArea)
 
     # if _ == 300:
     #     tetris_env.reset()

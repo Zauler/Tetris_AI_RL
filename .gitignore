@@ -168,3 +168,5 @@ env/
 #archivos del emulador
 *gb.ram
 *gb.state
+#Ignora el tensorboard
+a2c_cartpole_tensorboard/
