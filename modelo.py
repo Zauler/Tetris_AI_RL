@@ -12,16 +12,15 @@ print(torch.cuda.is_available())
 
 Empezar_de_cero = False #True Empezar de 0, False usar un modelo ya preentrenado. No puedez mezclar entornos en paralelo con simples.
 velocity = 0 #Velocidad del emulador, 0 es lo máximo posible.
-Activar_paralelo = False # False para no entrenar paralelos True para paralelizar.
+Activar_paralelo = True # False para no entrenar paralelos // True para paralelizar.
 n_envs= 4 # Numero de entornos en paralelo.
-modo_entrenar = False # True para entrenar, False para probar.
+modo_entrenar = True # True para entrenar // False para probar.
 
 if __name__ == '__main__':
 
-    #Crear el entorno
-    env = TetrisEnv('Tetris.gb',vel=velocity)
 
-    if Activar_paralelo:
+
+    if Activar_paralelo and modo_entrenar:
 
         #ENTORNO PARALELO
         def make_ev():
@@ -29,9 +28,12 @@ if __name__ == '__main__':
         vec_env = SubprocVecEnv([make_ev for _ in range(n_envs)])
 
     else:
+         
     ## ENTORNO SIMPLE
+    #Crear el entorno
+         env = TetrisEnv('Tetris.gb',vel=velocity)
     # Vectorizar el entorno (requerido por Stable Baselines)
-        vec_env = DummyVecEnv([lambda: env])
+         vec_env = DummyVecEnv([lambda: env])
 
 
     if modo_entrenar:
@@ -48,7 +50,7 @@ if __name__ == '__main__':
         try:
             
             # Entrenar el modelo
-            model.learn(total_timesteps=1000000)
+            model.learn(total_timesteps=10000000)
 
             # Guardar el modelo
             model.save("dqn_tetris")
@@ -75,6 +77,5 @@ if __name__ == '__main__':
         while True:
             action, _states = loaded_model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
-            print(env.render())
             if terminated or truncated:
                 obs, info = env.reset()
