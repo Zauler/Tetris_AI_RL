@@ -23,7 +23,7 @@ class TetrisEnv(gymnasium.Env):
         self.action_space = gymnasium.spaces.Discrete(4)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
 
          # Define el output_shape, asumiendo que deseas una resolución baja como 84x84 y color RGB.
-        self.output_shape = (84, 84, 3)  # Ajusta según sea necesario
+        self.output_shape = (160, 144, 3)  # Ajusta según sea necesario (baja es 84x84,3)
         
         # Actualizar el observation_space para que coincida con output_shape
         self.observation_space = gymnasium.spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
@@ -34,6 +34,24 @@ class TetrisEnv(gymnasium.Env):
         self.game_over_color = 135 #Cuando se acaba el juego todo el area está en este color
         self.game_over_zone = False # TRUE si pierdes cuando la ficha llega al final.
         self.game_overs_count = 0 #Contador de veces que game_over_zone se activa.
+        self.frame_count = 0  # Añadir un contador para los frames para la memoria visual
+        self.memory_in_seconds = 5 # Cuantos "segundos" almacenamos de memoria, es decir cada 15 frames almacenamos uno durante X periodos.
+
+
+        #Para ver las siguientes fichas:
+        # Table for translating game-representation of Tetromino types (8-bit int) to string
+        self.tetromino_table = {
+            "L": 0,
+            "J": 4,
+            "I": 8,
+            "O": 12,
+            "Z": 16,
+            "S": 20,
+            "T": 24,
+        }
+        self.inverse_tetromino_table = {v: k for k, v in self.tetromino_table.items()}
+        self.NEXT_TETROMINO_ADDR = 0xC213 #Lugar de la memoria donde está la siguiente ficha a aparecer.
+
 
     def step(self, action):
         # Mapeo de acciones:
@@ -71,6 +89,7 @@ class TetrisEnv(gymnasium.Env):
         else:
          self.ticks_since_last_score_increase += 1  # Incrementa el contador de ticks
 
+        
         # Comprueba la condición de truncamiento
         #trucated = self.ticks_since_last_score_increase >= 1800  or
         truncated = self.game_overs_count >= 15 #Elegimos 1800 x 15 fps x 120 segundos // y 15 veces para reiniciar.
@@ -112,16 +131,64 @@ class TetrisEnv(gymnasium.Env):
     
 
     def _gameoverArea(self):
-        # Función para comprobar si hay gameoverk, todo mismo color en la zona de juego.
+        # Función para comprobar si hay gameover, todo mismo color en la zona de juego.
         game_area=self.game_wrapper.game_area()
         unique_values = np.unique(game_area)
         all_same_value = len(unique_values) == 1 and unique_values[0] == self.game_over_color
         if all_same_value:
             self.game_over_zone = True
+            self._reset_memory()  # Resetear la memoria de frames
             print("GAME OVER!")
         
         #print(np.array2string(game_area, separator=', ')) #Ver la matriz de bloques
         return self.game_over_zone
+    
+
+    def next_tetromino(self):
+        """
+        Returns the next Tetromino to drop.
+
+        __NOTE:__ Don't use this function together with
+        `pyboy.plugins.game_wrapper_tetris.GameWrapperTetris.set_tetromino`.
+
+        Returns
+        -------
+        shape:
+            `str` of which Tetromino will drop:
+            * `"L"`: L-shape
+            * `"J"`: reverse L-shape
+            * `"I"`: I-shape
+            * `"O"`: square-shape
+            * `"Z"`: zig-zag left to right
+            * `"S"`: zig-zag right to left
+            * `"T"`: T-shape
+        """
+        # Bitmask, as the last two bits determine the direction
+        return self.inverse_tetromino_table[self.pyboy.get_memory_value(self.NEXT_TETROMINO_ADDR) & 0b11111100]
+
+    def get_next_tetromino_image(self):
+        # Obtener el tipo de la próxima ficha
+        next_tetromino_type = self.next_tetromino()
+
+        # Colores para representar cada tipo de ficha
+        tetromino_colors = {
+            "L": (255/255, 0/255, 0/255),  # Rojo
+            "J": (0/255, 255/255, 0/255),  # Verde
+            "I": (0/255, 0/255, 255/255),  # Azul
+            "O": (255/255, 255/255, 0/255), # Amarillo
+            "Z": (255/255, 0/255, 255/255), # Magenta
+            "S": (0/255, 255/255, 255/255), # Cian
+            "T": (128/255, 0/255, 128/255)  # Púrpura
+            }
+
+        # Crear una imagen simple para la próxima ficha
+        next_tetromino_image = np.full((20, 20, 3), tetromino_colors[next_tetromino_type], dtype=np.uint8)
+        return next_tetromino_image
+    
+    def _reset_memory(self):
+        # Reiniciar la memoria de frames a frames vacíos
+        self.past_frames = [np.zeros(self.output_shape, dtype=np.uint8) for _ in range(15)]
+        self.frame_count = 0  # También reinicia el contador de frames
 
 
 
@@ -131,32 +198,42 @@ class TetrisEnv(gymnasium.Env):
         self.game_wrapper.reset_game(timer_div=seed)
         observation = self._get_observation()
         info = {} # Información adicional (en este caso, un diccionario vacío)
+        self._reset_memory()
         return observation, info
     
 
-    def render(self, reduce_res=True, add_memory=True, update_mem=False):
+    def render(self, show_next_tetromino=True, memory_frames=True):
+        # Obtener la imagen actual del juego a la resolución reseada
+        game_pixels_render = self._get_observation()
 
-        game_pixels_render = self.pyboy.botsupport_manager().screen().screen_ndarray()  # (144, 160, 3)
-        if reduce_res:
-            # Reducir la resolución de la imagen del juego
-            game_pixels_render = (255 * resize(game_pixels_render, self.output_shape)).astype(np.uint8)
-            if update_mem:
-                # Actualizar el array de fotogramas recientes
-                self.recent_frames[0] = game_pixels_render
-            if add_memory:
-                # Crear una imagen compuesta con memoria de exploración y memoria reciente
-                pad = np.zeros(shape=(self.mem_padding, self.output_shape[1], 3), dtype=np.uint8)
-                game_pixels_render = np.concatenate(
-                    (
-                        self.create_exploration_memory(),
-                        pad,
-                        self.create_recent_memory(),
-                        pad,
-                        rearrange(self.recent_frames, 'f h w c -> (f h) w c')
-                    ),
-                    axis=0
-                )
+        # Añadir la visualización de la próxima ficha
+        if show_next_tetromino:
+                next_tetromino_image = self.get_next_tetromino_image()
+                # Redimensionar next_tetromino_image para que coincida con la anchura de game_pixels_render
+                next_tetromino_image = resize(next_tetromino_image, (next_tetromino_image.shape[0], game_pixels_render.shape[1], 3))
+
+                padding_height = 10  # Altura del padding que separa las imágenes
+                padding = np.zeros((padding_height, game_pixels_render.shape[1], 3), dtype=np.uint8)  # Separador vertical
+
+                game_pixels_render = np.concatenate([game_pixels_render, padding, next_tetromino_image], axis=0)
+
+        # Añadir memoria de frames pasados
+        if memory_frames:
+            if not hasattr(self, 'past_frames'):
+                self.past_frames = [np.zeros(self.output_shape, dtype=np.uint8) for _ in range(self.memory_in_seconds)]  # Inicializar si no existe
+
+            self.frame_count += 1
+            if self.frame_count % 15 == 0:
+                self.past_frames.pop(0)  # Eliminar el frame más antiguo
+                self.past_frames.append(np.copy(game_pixels_render))  # Añadir el frame actual
+
+            # Crear una imagen compuesta con los últimos 15 frames
+            memory_image = np.concatenate(self.past_frames[::-1], axis=0)  # Invertir la lista para que el más reciente esté arriba
+            game_pixels_render = np.concatenate([game_pixels_render, memory_image], axis=0)
+            
         return game_pixels_render
+    
 
+        
     def close(self):
         self.pyboy.stop()

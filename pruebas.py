@@ -3,15 +3,23 @@ from pyboy.plugins.game_wrapper_tetris import GameWrapperTetris
 from gimnasio import TetrisEnv
 import random
 from stable_baselines3.common.env_checker import check_env
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Configuración inicial para matplotlib
+#plt.ion()  # Activa el modo interactivo
+#fig, ax = plt.subplots()  # Crea una figura y un eje para el gráfico
 
 # #Empezamos cargando el juego
 file_path = "Tetris_3.gb"
 tetris_env = TetrisEnv(game_file_path=file_path)
 
-for _ in range(100000):  # Ejecutar 100 pasos, por ejemplo.
+for _ in range(1):  # Ejecutar 100 pasos, por ejemplo.
     action = random.randint(0, 3)  # Acción aleatoria.
     observation, reward, done, truncated  ,info = tetris_env.step(action)
-    print(tetris_env.game_wrapper.level)
+    game_area=tetris_env.game_wrapper.game_area()
+    print(np.array(game_area))
+    print(np.array(len(game_area)))
     
     # print("DONEEEEEEEEEEEEEEEEEEE: ", done)
     # print("TRUNCATEEEEEEEEEE: ", truncated)
@@ -22,8 +30,24 @@ for _ in range(100000):  # Ejecutar 100 pasos, por ejemplo.
     #     tetris_env.close()
     #     break
 
-    if done:
-        tetris_env.close()
+
+    # # Obtener la imagen del render
+    # rendered_image = tetris_env.render()
+
+    # # Visualizar la imagen
+    # ax.imshow(rendered_image)
+    # ax.axis('off')  # Desactivar los ejes
+    # plt.draw()  # Dibujar la imagen
+    # plt.pause(0.001)  # Pequeña pausa para actualizar la imagen
+
+    # if done:
+    #     tetris_env.close()
+    #     break
 
 
 # check_env = check_env(tetris_env, warn=True, skip_render_check=True)
+
+
+# # Desactiva el modo interactivo al finalizar
+# plt.ioff()
+# plt.show()
