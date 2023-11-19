@@ -2,9 +2,12 @@
 import torch
 # Importar tu entorno
 from gimnasio import TetrisEnv
+from evaluacion_TensorBoard import TensorboardCallback
 # Stable Baselines
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv , SubprocVecEnv
+
+
 
 # PyTorch esté utilizando CUDA si está disponible
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -15,10 +18,12 @@ velocity = 0 #Velocidad del emulador, 0 es lo máximo posible.
 Activar_paralelo = True # False para no entrenar paralelos // True para paralelizar.
 n_envs= 8 # Numero de entornos en paralelo.
 modo_entrenar = True # True para entrenar // False para probar.
+ciclos_entrenamiento = 10000 # Numero de ciclos de entrenamiento.
 
 if __name__ == '__main__':
-
-
+    
+    ## Crea el callback
+    #callback = TensorboardCallback(check_freq=1000, log_dir="./a2c_cartpole_tensorboard/")
 
     if Activar_paralelo and modo_entrenar:
 
@@ -40,21 +45,23 @@ if __name__ == '__main__':
 
 
         if Empezar_de_cero:
+
+                
                 # Crear el modelo
-                model = DQN("MlpPolicy", vec_env, verbose=1,learning_rate=0.0005, gamma=0.99,batch_size=64, target_update_interval=1000,
-                            buffer_size=100000,  tensorboard_log="./a2c_cartpole_tensorboard/")
+                model = DQN("MlpPolicy", vec_env, verbose=1,learning_rate=0.0005, gamma=0.99, batch_size=64, target_update_interval=1000,
+                            buffer_size=1000000,  tensorboard_log="./a2c_cartpole_tensorboard/")
         else:
             # Cargar el modelo
             model = DQN.load("dqn_tetris")
             model.set_env(vec_env)
 
         try:
-            
-            # Entrenar el modelo
-            model.learn(total_timesteps=100000000)
+            for i in range(ciclos_entrenamiento):
+                # Entrenar el modelo
+                model.learn(total_timesteps=10000, reset_num_timesteps=False) #, callback=callback
 
-            # Guardar el modelo
-            model.save("dqn_tetris")
+                # Guardar el modelo
+                model.save("dqn_tetris")
 
         except BaseException as e:
 
@@ -71,7 +78,7 @@ if __name__ == '__main__':
     else:
 
         # Cargar el modelo
-        loaded_model = DQN.load("dqn_tetris")
+        loaded_model = DQN.load("dqn_tetris",env=None)
 
         # Evaluar el modelo
         obs, info  = env.reset()

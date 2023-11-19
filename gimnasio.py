@@ -28,9 +28,7 @@ class TetrisEnv(gymnasium.Env):
         # Actualizar el observation_space para que coincida con output_shape
         self.observation_space = gymnasium.spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
 
-        #Si no aumenta el juego en x frames empezamos ciclo.
-        self.prev_score = 0  # Puntuación en el último tick
-        self.ticks_since_last_score_increase = 0  # Ticks desde la última vez que la puntuación aumentó
+        #sistema de recomenpensas
         self.game_over_color = 135 #Cuando se acaba el juego todo el area está en este color
         self.game_over_zone = False # TRUE si pierdes cuando la ficha llega al final.
         self.game_overs_count = 0 #Contador de veces que game_over_zone se activa.
@@ -82,20 +80,14 @@ class TetrisEnv(gymnasium.Env):
         info = {}  # Información adicional
 
 
-        #Comprueba si la puntuación ha aumentado
-        if reward > self.prev_score:
-         self.ticks_since_last_score_increase = 0  # Reinicia el contador de ticks
-         self.prev_score = reward  # Actualiza la puntuación anterior
-        else:
-         self.ticks_since_last_score_increase += 1  # Incrementa el contador de ticks
-
         
         # Comprueba la condición de truncamiento
         #trucated = self.ticks_since_last_score_increase >= 1800  or
-        truncated = self.game_overs_count >= 15 #Elegimos 1800 x 15 fps x 120 segundos // y 15 veces para reiniciar.
+        truncated = self.game_overs_count >= 15 #15 veces para reiniciar.
 
         if truncated: #Si no no podemos continuar.
             self.game_overs_count = 0
+            print("Partida terminada")
         
         return observation, reward, done, truncated ,info 
     
@@ -112,15 +104,16 @@ class TetrisEnv(gymnasium.Env):
     def _get_reward(self):
         # Implementar la lógica para calcular la recompensa
         score = self.game_wrapper.score * (self.game_wrapper.level+1)
-        lines = self.game_wrapper.lines * 50 * (self.game_wrapper.level+1)
-        penalization = self.ticks_since_last_score_increase*0.01
+        lines = self.game_wrapper.lines * 500 * (self.game_wrapper.level+1)
+        penalization = 0
         self._gameoverArea()
 
         if self.game_over_zone: #Si pierde la partida, se añade penalización
-            penalization += 1000
+            penalization += 10000
             self.game_over_zone = False
             self.game_overs_count += 1 #Sumamos una vez que ha perdido
 
+        penalization += self._calculate_penalty()
         return score + lines - penalization
 
     def _is_done(self):
@@ -128,7 +121,24 @@ class TetrisEnv(gymnasium.Env):
         # done = bool(self.game_wrapper.game_over())
         done = False
         return done
-    
+
+    def _calculate_penalty(self):
+        game_area=self.game_wrapper.game_area()
+        penalty= 0 
+        acumulative = 0
+        max_penalty_per_row = 5 #
+        rows,cols = game_area.shape
+        for row in range(rows):
+            if any(val != 47 for val in game_area[row, :]):
+                acumulative += 1
+            else :
+                acumulative = 0
+            
+            if acumulative > 3:
+                    penalty += (rows-row)*max_penalty_per_row
+
+        return penalty
+
 
     def _gameoverArea(self):
         # Función para comprobar si hay gameover, todo mismo color en la zona de juego.
