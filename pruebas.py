@@ -12,14 +12,20 @@ import numpy as np
 
 # #Empezamos cargando el juego
 file_path = "Tetris_3.gb"
-tetris_env = TetrisEnv(game_file_path=file_path)
+tetris_env = TetrisEnv(game_file_path=file_path,vel=1)
+ticks= 0
 
-for _ in range(1):  # Ejecutar 100 pasos, por ejemplo.
-    action = random.randint(0, 3)  # Acción aleatoria.
+while True:  # Ejecutar 100 pasos, por ejemplo.
+    action = random.randint(0, 4)  # Acción aleatoria.
     observation, reward, done, truncated  ,info = tetris_env.step(action)
-    game_area=tetris_env.game_wrapper.game_area()
-    print(np.array(game_area))
-    print(np.array(len(game_area)))
+    ticks += 1
+    #if ticks % 15 == 0:
+    print(reward,done,truncated)
+    print(tetris_env.game_wrapper.game_over)
+        
+    #game_area=tetris_env.game_wrapper.game_area()
+    # print(np.array(game_area))
+    # print(np.array(len(game_area)))
     
     # print("DONEEEEEEEEEEEEEEEEEEE: ", done)
     # print("TRUNCATEEEEEEEEEE: ", truncated)

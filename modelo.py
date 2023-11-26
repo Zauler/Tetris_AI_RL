@@ -16,7 +16,7 @@ print(torch.cuda.is_available())
 Empezar_de_cero = False #True Empezar de 0, False usar un modelo ya preentrenado. No puedez mezclar entornos en paralelo con simples.
 velocity = 0 #Velocidad del emulador, 0 es lo máximo posible.
 Activar_paralelo = True # False para no entrenar paralelos // True para paralelizar.
-n_envs= 8 # Numero de entornos en paralelo.
+n_envs= 16 # Numero de entornos en paralelo.
 modo_entrenar = True # True para entrenar // False para probar.
 ciclos_entrenamiento = 10000 # Numero de ciclos de entrenamiento.
 
@@ -49,7 +49,7 @@ if __name__ == '__main__':
                 
                 # Crear el modelo
                 model = DQN("MlpPolicy", vec_env, verbose=1,learning_rate=0.0005, gamma=0.99, batch_size=64, target_update_interval=1000,
-                            buffer_size=1000000,  tensorboard_log="./a2c_cartpole_tensorboard/")
+                            buffer_size=500000,  tensorboard_log="./a2c_cartpole_tensorboard/")
         else:
             # Cargar el modelo
             model = DQN.load("dqn_tetris")
@@ -85,5 +85,6 @@ if __name__ == '__main__':
         while True:
             action, _states = loaded_model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
+            print(reward,terminated,truncated)
             if terminated or truncated:
                 obs, info = env.reset()

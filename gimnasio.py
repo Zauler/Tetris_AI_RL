@@ -1,5 +1,6 @@
 import gymnasium
 import numpy as np
+import random
 from skimage.transform import resize
 from pyboy import PyBoy, WindowEvent
 from einops import rearrange  # Asegúrate de tener instalada la librería einops
@@ -13,14 +14,14 @@ class TetrisEnv(gymnasium.Env):
         "video.frames_per_second": 15
     }
         
-    def __init__(self, game_file_path,vel=1):
+    def __init__(self, game_file_path,vel=1, memory_frames = False, memory_in_seconds = 5 ):
         super().__init__()
         self.pyboy = PyBoy(game_file_path,window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
 
         self.pyboy.set_emulation_speed(vel)
         self.game_wrapper = self.pyboy.game_wrapper()
         self.game_wrapper.start_game(timer_div=0x00) #inciamos el juego.
-        self.action_space = gymnasium.spaces.Discrete(4)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
+        self.action_space = gymnasium.spaces.Discrete(5)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
 
          # Define el output_shape, asumiendo que deseas una resolución baja como 84x84 y color RGB.
         self.output_shape = (160, 144, 3)  # Ajusta según sea necesario (baja es 84x84,3)
@@ -28,12 +29,14 @@ class TetrisEnv(gymnasium.Env):
         # Actualizar el observation_space para que coincida con output_shape
         self.observation_space = gymnasium.spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
 
-        #sistema de recomenpensas
+        #sistema de recompensas
         self.game_over_color = 135 #Cuando se acaba el juego todo el area está en este color
+        self.gameover_ticks = 0 #Contador de ticks desde que se acaba el juego.
         self.game_over_zone = False # TRUE si pierdes cuando la ficha llega al final.
         self.game_overs_count = 0 #Contador de veces que game_over_zone se activa.
         self.frame_count = 0  # Añadir un contador para los frames para la memoria visual
-        self.memory_in_seconds = 5 # Cuantos "segundos" almacenamos de memoria, es decir cada 15 frames almacenamos uno durante X periodos.
+        self.memory_frames = memory_frames #Para ver la memoria de frames pasados, si FALSE no hay memoria
+        self.memory_in_seconds = memory_in_seconds # Cuantos "segundos" almacenamos de memoria, es decir cada 15 frames almacenamos uno durante X periodos.
 
 
         #Para ver las siguientes fichas:
@@ -51,12 +54,14 @@ class TetrisEnv(gymnasium.Env):
         self.NEXT_TETROMINO_ADDR = 0xC213 #Lugar de la memoria donde está la siguiente ficha a aparecer.
 
 
+
     def step(self, action):
         # Mapeo de acciones:
         # 0 -> mover izquierda
         # 1 -> mover derecha
         # 2 -> rotar
         # 3 -> bajar
+        # 4 -> No hacer nada
         if action == 0:
             self.pyboy.send_input(WindowEvent.PRESS_ARROW_LEFT)
             self.pyboy.tick()
@@ -73,22 +78,25 @@ class TetrisEnv(gymnasium.Env):
             self.pyboy.send_input(WindowEvent.PRESS_ARROW_DOWN)
             self.pyboy.tick()
             self.pyboy.send_input(WindowEvent.RELEASE_ARROW_DOWN)
+        elif action ==4:
+            self.pyboy.tick()
         
         observation = self._get_observation()  # Crear un método con la observación
-        reward = self._get_reward()  # Crear un método con la recompensa
-        done = self._is_done()  # Hace falta crear un método para ver si el episodio ha terminado
+        
+        
+        last_game_over_count = self.game_overs_count #Capturamos el anterior contador de gameovers
+        reward = self._get_reward()  # miramos la recomenpensa, donde tambíen se mira los gameovers
+        
+        if last_game_over_count < self.game_overs_count: #si es mayor es que ha perdido
+            done = True
+        else:
+            done = False
+            
         info = {}  # Información adicional
 
-
-        
         # Comprueba la condición de truncamiento
-        #trucated = self.ticks_since_last_score_increase >= 1800  or
-        truncated = self.game_overs_count >= 15 #15 veces para reiniciar.
+        truncated = False
 
-        if truncated: #Si no no podemos continuar.
-            self.game_overs_count = 0
-            print("Partida terminada")
-        
         return observation, reward, done, truncated ,info 
     
     def _get_observation(self):
@@ -112,21 +120,22 @@ class TetrisEnv(gymnasium.Env):
             penalization += 10000
             self.game_over_zone = False
             self.game_overs_count += 1 #Sumamos una vez que ha perdido
+            print(self.game_overs_count)
 
         penalization += self._calculate_penalty()
+        
+        if self.gameover_ticks > 0:
+             score = 0  # No dar recompensa mientras se está esperando
+             lines = 0 # No dar recompensa mientras se está esperando
+             penalization += 10000
         return score + lines - penalization
 
-    def _is_done(self):
-        # Implementar la lógica para ver si el episodio ha terminado
-        # done = bool(self.game_wrapper.game_over())
-        done = False
-        return done
 
     def _calculate_penalty(self):
         game_area=self.game_wrapper.game_area()
         penalty= 0 
         acumulative = 0
-        max_penalty_per_row = 5 #
+        max_penalty_per_row = 15 #
         rows,cols = game_area.shape
         for row in range(rows):
             if any(val != 47 for val in game_area[row, :]):
@@ -134,13 +143,18 @@ class TetrisEnv(gymnasium.Env):
             else :
                 acumulative = 0
             
-            if acumulative > 3:
+            if acumulative > 10:
                     penalty += (rows-row)*max_penalty_per_row
 
         return penalty
 
 
     def _gameoverArea(self):
+            # Si gameover_ticks es mayor que 0, decrementarlo y retornar
+        if self.gameover_ticks > 0:
+            self.gameover_ticks -= 1
+            return
+        
         # Función para comprobar si hay gameover, todo mismo color en la zona de juego.
         game_area=self.game_wrapper.game_area()
         unique_values = np.unique(game_area)
@@ -148,7 +162,9 @@ class TetrisEnv(gymnasium.Env):
         if all_same_value:
             self.game_over_zone = True
             self._reset_memory()  # Resetear la memoria de frames
+            self.gameover_ticks = 90  # Esperar 90 ticks antes de contar otro gameover
             print("GAME OVER!")
+            
         
         #print(np.array2string(game_area, separator=', ')) #Ver la matriz de bloques
         return self.game_over_zone
@@ -196,15 +212,17 @@ class TetrisEnv(gymnasium.Env):
         return next_tetromino_image
     
     def _reset_memory(self):
-        # Reiniciar la memoria de frames a frames vacíos
-        self.past_frames = [np.zeros(self.output_shape, dtype=np.uint8) for _ in range(15)]
-        self.frame_count = 0  # También reinicia el contador de frames
+        if self.memory_frames:
+            # Reiniciar la memoria de frames a frames vacíos
+            self.past_frames = [np.zeros(self.output_shape, dtype=np.uint8) for _ in range(15)]
+            self.frame_count = 0  # También reinicia el contador de frames
 
 
 
     def reset(self,seed=None):
         if seed is None:
-            seed = 0x00
+            #seed =  0x00
+            seed = random.randint(0, 0xffffffff)  # Genera una semilla aleatoria
         self.game_wrapper.reset_game(timer_div=seed)
         observation = self._get_observation()
         info = {} # Información adicional (en este caso, un diccionario vacío)
@@ -212,7 +230,7 @@ class TetrisEnv(gymnasium.Env):
         return observation, info
     
 
-    def render(self, show_next_tetromino=True, memory_frames=True):
+    def render(self, show_next_tetromino=True):
         # Obtener la imagen actual del juego a la resolución reseada
         game_pixels_render = self._get_observation()
 
@@ -228,7 +246,7 @@ class TetrisEnv(gymnasium.Env):
                 game_pixels_render = np.concatenate([game_pixels_render, padding, next_tetromino_image], axis=0)
 
         # Añadir memoria de frames pasados
-        if memory_frames:
+        if self.memory_frames:
             if not hasattr(self, 'past_frames'):
                 self.past_frames = [np.zeros(self.output_shape, dtype=np.uint8) for _ in range(self.memory_in_seconds)]  # Inicializar si no existe
 
