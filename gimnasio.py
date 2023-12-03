@@ -3,9 +3,7 @@ import numpy as np
 import random
 from skimage.transform import resize
 from pyboy import PyBoy, WindowEvent
-from einops import rearrange  # Asegúrate de tener instalada la librería einops
-
-
+from einops import rearrange  # Make sure you have the einops library installed
 
 class TetrisEnv(gymnasium.Env):
         
@@ -14,32 +12,31 @@ class TetrisEnv(gymnasium.Env):
         "video.frames_per_second": 15
     }
         
-    def __init__(self, game_file_path,vel=1, memory_frames = False, memory_in_seconds = 5 ):
+    def __init__(self, game_file_path, vel=1, memory_frames=False, memory_in_seconds=5):
         super().__init__()
-        self.pyboy = PyBoy(game_file_path,window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
+        self.pyboy = PyBoy(game_file_path, window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
 
         self.pyboy.set_emulation_speed(vel)
         self.game_wrapper = self.pyboy.game_wrapper()
-        self.game_wrapper.start_game(timer_div=0x00) #inciamos el juego.
-        self.action_space = gymnasium.spaces.Discrete(5)  # Suponiendo 4 acciones: mover izquierda, mover derecha, rotar, bajar
+        self.game_wrapper.start_game(timer_div=0x00)  # Start the game
+        self.action_space = gymnasium.spaces.Discrete(5)  # Assuming 5 actions: move left, move right, rotate, drop, do nothing
 
-         # Define el output_shape, asumiendo que deseas una resolución baja como 84x84 y color RGB.
-        self.output_shape = (160, 144, 3)  # Ajusta según sea necesario (baja es 84x84,3)
+        # Define the output_shape, assuming you want a low resolution like 84x84 and RGB color.
+        self.output_shape = (160, 144, 3)  # Adjust as needed (low resolution is 84x84, 3)
         
-        # Actualizar el observation_space para que coincida con output_shape
+        # Update the observation_space to match output_shape
         self.observation_space = gymnasium.spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
 
-        #sistema de recompensas
-        self.game_over_color = 135 #Cuando se acaba el juego todo el area está en este color
-        self.gameover_ticks = 0 #Contador de ticks desde que se acaba el juego.
-        self.game_over_zone = False # TRUE si pierdes cuando la ficha llega al final.
-        self.game_overs_count = 0 #Contador de veces que game_over_zone se activa.
-        self.frame_count = 0  # Añadir un contador para los frames para la memoria visual
-        self.memory_frames = memory_frames #Para ver la memoria de frames pasados, si FALSE no hay memoria
-        self.memory_in_seconds = memory_in_seconds # Cuantos "segundos" almacenamos de memoria, es decir cada 15 frames almacenamos uno durante X periodos.
+        # Reward system
+        self.game_over_color = 135  # When the game is over, the entire area is in this color
+        self.gameover_ticks = 0  # Ticks counter since the game is over.
+        self.game_over_zone = False  # TRUE if you lose when the piece reaches the bottom.
+        self.game_overs_count = 0  # Counter for the number of times game_over_zone is activated.
+        self.frame_count = 0  # Add a counter for frames for visual memory
+        self.memory_frames = memory_frames  # To see the memory of past frames, if FALSE there is no memory
+        self.memory_in_seconds = memory_in_seconds  # How many "seconds" of memory we store, i.e., every 15 frames we store one for X periods.
 
-
-        #Para ver las siguientes fichas:
+        # To see the next pieces:
         # Table for translating game-representation of Tetromino types (8-bit int) to string
         self.tetromino_table = {
             "L": 0,
@@ -51,17 +48,15 @@ class TetrisEnv(gymnasium.Env):
             "T": 24,
         }
         self.inverse_tetromino_table = {v: k for k, v in self.tetromino_table.items()}
-        self.NEXT_TETROMINO_ADDR = 0xC213 #Lugar de la memoria donde está la siguiente ficha a aparecer.
-
-
+        self.NEXT_TETROMINO_ADDR = 0xC213  # Memory address where the next piece appears.
 
     def step(self, action):
-        # Mapeo de acciones:
-        # 0 -> mover izquierda
-        # 1 -> mover derecha
-        # 2 -> rotar
-        # 3 -> bajar
-        # 4 -> No hacer nada
+        # Action mapping:
+        # 0 -> move left
+        # 1 -> move right
+        # 2 -> rotate
+        # 3 -> drop
+        # 4 -> do nothing
         if action == 0:
             self.pyboy.send_input(WindowEvent.PRESS_ARROW_LEFT)
             self.pyboy.tick()
@@ -78,76 +73,73 @@ class TetrisEnv(gymnasium.Env):
             self.pyboy.send_input(WindowEvent.PRESS_ARROW_DOWN)
             self.pyboy.tick()
             self.pyboy.send_input(WindowEvent.RELEASE_ARROW_DOWN)
-        elif action ==4:
+        elif action == 4:
             self.pyboy.tick()
         
-        observation = self._get_observation()  # Crear un método con la observación
+        observation = self._get_observation()  # Create a method for observation
         
+        last_game_over_count = self.game_overs_count  # Capture the previous game over count
+        reward = self._get_reward()  # Calculate the reward, which also checks for game overs
         
-        last_game_over_count = self.game_overs_count #Capturamos el anterior contador de gameovers
-        reward = self._get_reward()  # miramos la recomenpensa, donde tambíen se mira los gameovers
-        
-        if last_game_over_count < self.game_overs_count: #si es mayor es que ha perdido
+        if last_game_over_count < self.game_overs_count:  # If it's greater, it means the game is lost
             done = True
         else:
             done = False
             
-        info = {}  # Información adicional
+        info = {}  # Additional information
 
-        # Comprueba la condición de truncamiento
+        # Check the truncation condition
         truncated = False
 
-        return observation, reward, done, truncated ,info 
+        return observation, reward, done, truncated, info 
     
     def _get_observation(self):
-        # Obtener la matriz de píxeles RGB del juego
+        # Get the RGB pixel matrix of the game
         game_pixels = self.pyboy.botsupport_manager().screen().screen_ndarray()
         
-        # Reducir la resolución de la imagen, si es necesario
+        # Reduce the image resolution, if necessary
         reduced_res_pixels = (255 * resize(game_pixels, self.output_shape)).astype(np.uint8)
         
         return reduced_res_pixels
 
-
     def _get_reward(self):
-        # Implementar la lógica para calcular la recompensa
-        score = self.game_wrapper.score * (self.game_wrapper.level+1)
-        lines = self.game_wrapper.lines * 500 * (self.game_wrapper.level+1)
+        # Implement the logic to calculate the reward
+        score = self.game_wrapper.score * (self.game_wrapper.level + 1)
+        lines = self.game_wrapper.lines * 500 * (self.game_wrapper.level + 1)
         penalization = 0
         self._gameoverArea()
 
-        if self.game_over_zone: #Si pierde la partida, se añade penalización
+        if self.game_over_zone:  # If the game is lost, add penalty
             penalization += 10000
             self.game_over_zone = False
-            self.game_overs_count += 1 #Sumamos una vez que ha perdido
+            self.game_overs_count += 1  # Increment the count of game overs
             print(self.game_overs_count)
 
         penalization += self._calculate_penalty()
         
         if self.gameover_ticks > 0:
-             score = 0  # No dar recompensa mientras se está esperando
-             lines = 0 # No dar recompensa mientras se está esperando
-             penalization += 10000
+            score = 0  # Do not give reward while waiting
+            lines = 0  # Do not give reward while waiting
+            penalization += 10000
         return score + lines - penalization
 
-
     def _calculate_penalty(self):
-        game_area=self.game_wrapper.game_area()
-        penalty= 0 
+        game_area = self.game_wrapper.game_area()
+        penalty = 0 
         acumulative = 0
-        max_penalty_per_row = 15 #
-        rows,cols = game_area.shape
+        max_penalty_per_row = 15
+        rows, cols = game_area.shape
+        # Calculate penalty based on the game area
         for row in range(rows):
             if any(val != 47 for val in game_area[row, :]):
                 acumulative += 1
-            else :
+            else:
                 acumulative = 0
             
             if acumulative > 10:
-                    penalty += (rows-row)*max_penalty_per_row
+                penalty += (rows - row) * max_penalty_per_row
 
         return penalty
-
 
     def _gameoverArea(self):
             # Si gameover_ticks es mayor que 0, decrementarlo y retornar
@@ -219,16 +211,15 @@ class TetrisEnv(gymnasium.Env):
 
 
 
-    def reset(self,seed=None):
+    def reset(self, seed=None):
         if seed is None:
-            #seed =  0x00
-            seed = random.randint(0, 0xffffffff)  # Genera una semilla aleatoria
+            seed = 0x00
+            # seed = random.randint(0, 0xffffffff)  # Genera una semilla aleatoria
         self.game_wrapper.reset_game(timer_div=seed)
         observation = self._get_observation()
-        info = {} # Información adicional (en este caso, un diccionario vacío)
+        info = {}  # Información adicional (en este caso, un diccionario vacío)
         self._reset_memory()
         return observation, info
-    
 
     def render(self, show_next_tetromino=True):
         # Obtener la imagen actual del juego a la resolución reseada
@@ -236,14 +227,14 @@ class TetrisEnv(gymnasium.Env):
 
         # Añadir la visualización de la próxima ficha
         if show_next_tetromino:
-                next_tetromino_image = self.get_next_tetromino_image()
-                # Redimensionar next_tetromino_image para que coincida con la anchura de game_pixels_render
-                next_tetromino_image = resize(next_tetromino_image, (next_tetromino_image.shape[0], game_pixels_render.shape[1], 3))
+            next_tetromino_image = self.get_next_tetromino_image()
+            # Redimensionar next_tetromino_image para que coincida con la anchura de game_pixels_render
+            next_tetromino_image = resize(next_tetromino_image, (next_tetromino_image.shape[0], game_pixels_render.shape[1], 3))
 
-                padding_height = 10  # Altura del padding que separa las imágenes
-                padding = np.zeros((padding_height, game_pixels_render.shape[1], 3), dtype=np.uint8)  # Separador vertical
+            padding_height = 10  # Altura del padding que separa las imágenes
+            padding = np.zeros((padding_height, game_pixels_render.shape[1], 3), dtype=np.uint8)  # Separador vertical
 
-                game_pixels_render = np.concatenate([game_pixels_render, padding, next_tetromino_image], axis=0)
+            game_pixels_render = np.concatenate([game_pixels_render, padding, next_tetromino_image], axis=0)
 
         # Añadir memoria de frames pasados
         if self.memory_frames:
@@ -258,10 +249,8 @@ class TetrisEnv(gymnasium.Env):
             # Crear una imagen compuesta con los últimos 15 frames
             memory_image = np.concatenate(self.past_frames[::-1], axis=0)  # Invertir la lista para que el más reciente esté arriba
             game_pixels_render = np.concatenate([game_pixels_render, memory_image], axis=0)
-            
-        return game_pixels_render
-    
 
-        
+        return game_pixels_render
+
     def close(self):
         self.pyboy.stop()
